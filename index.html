@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>影像處理</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-jcrop/0.9.15/css/jquery.Jcrop.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-jcrop/0.9.15/js/jquery.Jcrop.js"></script>
+    <style>
+        #file-upload {
+            display: none;
+        }
+
+        blank img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        #drop_zone {
+            border: 1px solid lightgray;
+            width: 400px;
+            /* height: 100px; */
+            border: dotted;
+            text-align: center;
+            margin: 2em;
+            background-color: white;
+            align-self: center;
+        }
+
+        .text {
+            color: white;
+            mix-blend-mode: difference;
+        }
+
+        .box {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div>
+        <input type="checkbox" id="ck_single" name="check_single" />
+        <label for="check_single">只取第一點</label>
+        <label for="maf">放大倍率</label>
+        <input type="number" id="maf" name="maf" value="2"><br>
+        <button onclick="download()">下載數據</button>
+    </div>
+    <div style="display:flex; flex-direction: row; align-items: center;justify-content:space-between">
+        <canvas id="colormapCanvas" width="10" height="200"></canvas>
+        <div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+            <input id="file-upload" type="file" accept="image/*" onchange="imgChange(this)" />
+            <p class="text" role="button" onclick="uploadClick()">拖曳圖片至此 或 點擊此處上傳</p>
+            <div class="text" id="d">Dimension:</div>
+            <div class="text" id="para">參數</div>
+            <div class="text" id="para2">參數2</div>
+            </br>
+        </div>
+        <div>-></div>
+        <div>調整後</div>
+        <canvas class id="lcbox2"></canvas>
+        <div>灰階</div>
+        <canvas class id="lcbox3"></canvas>
+    </div>
+    <div id="wrapper_img">
+        <img id="image" />
+    </div>
+    <canvas id="canvas" style="display: none;"></canvas>
+    <h5>指定圈選區域</h5>
+    <form id="selection-form">
+        <label for="x">X</label>
+        <input type="number" id="x" name="x" value="200"><br>
+
+        <label for="y">Y</label>
+        <input type="number" id="y" name="y" value="200"><br>
+
+        <label for="w">W</label>
+        <input type="number" id="w" name="w" value="10"><br>
+
+        <label for="h">H</label>
+        <input type="number" id="h" name="h" value="10"><br>
+        <input type="submit" value="套用選擇">
+    </form>
+    <hr>
+    <div style="display:flex; flex-direction: row; align-items: center; justify-content: center;">
+        <div>調整前</div>
+        <canvas id="cbox1"></canvas>
+        <div>調整後</div>
+        <canvas id="cbox2"></canvas>
+        <div>灰階</div>
+        <canvas id="cbox3"></canvas>
+    </div>
+    <hr>
+    </br>
+    <script>
+        var info = {
+            name: "",
+            mode: "",
+            lr: "",
+            lrVal: "",
+        };
+
+        var measure = {
+            count: 0,
+            average: 0,
+            maximum: 0,
+            minimum: 0,
+            variance: 0,
+            width: 0, height: 0
+        };
+
+        var rgbArray = [];
+        var greyArray = [];
+        var points = [];
+        var jcropApi = {};
+
+        function drawVerticalColormap(canvasId, colorPoints) {
+            const canvas = document.getElementById(canvasId);
+            const context = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+
+            const gradient = context.createLinearGradient(0, 0, 0, height);
+
+            for (let i = 0; i < colorPoints.length; i++) {
+                const [r, g, b] = colorPoints[i];
+                const position = i / (colorPoints.length - 1);
+                const colorString = `rgb(${r}, ${g}, ${b})`;
+                gradient.addColorStop(position, colorString);
+            }
+
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, width, height);
+        }
+
+        const colorPoints = [
+            [127, 0, 0],
+            [255, 0, 0],
+            [255, 255, 0],
+            [0, 255, 0],
+            [0, 255, 255],
+            [0, 0, 255],
+            [0, 0, 127]
+        ];
+
+        drawVerticalColormap('colormapCanvas', colorPoints);
+
+        function drawDot(canvasId, xCoordinate) {
+            const canvas = document.getElementById(canvasId);
+            const context = canvas.getContext('2d');
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+
+            // Calculate the y-coordinate in canvas units
+            const yPos = xCoordinate * canvasHeight;
+
+            context.clearRect(0, 0, canvasWidth, canvasHeight); // Clear the canvas
+            drawVerticalColormap('colormapCanvas', colorPoints);
+            context.beginPath();
+            context.arc(canvasWidth / 2, yPos, 5, 0, 2 * Math.PI); // Draw a dot at the center of the canvas
+            context.fillStyle = 'white';
+            context.fill();
+            context.closePath();
+        }
+
+
+        function mapping(r, g, b) {
+            var max = Math.max(r, g, b);
+            var v = 0;
+            if (max == r) {
+                var max2 = Math.max(g, b);
+                if (max2 == g) {
+                    v = ((r - 127) / 128) * 1 / 10;
+                } else {
+                    v = (g / 255) * 2 / 10 + 1 / 10;
+                }
+            }
+            if (max == g) {
+                var max2 = Math.max(r, b);
+                if (max2 == r) {
+                    v = ((255 - r) / 255) * 2 / 10 + 3 / 10;
+                } else {
+                    v = (b / 255) * 2 / 10 + 5 / 6;
+                }
+            }
+
+            if (max == b) {
+                var max2 = Math.max(r, g);
+                if (max2 == g) {
+                    v = ((255 - g) / 255) * 2 / 10 + 7 / 10;
+                } else {
+                    v = (b / 255) * 1 / 10 + 9 / 10;
+                }
+            }
+            return v;
+
+        }
+
+        function dragOverHandler(ev) {
+            // console.log("File(s) in drop zone");
+            ev.preventDefault();
+        }
+
+        function dropHandler(ev) {
+            console.log("File(s) dropped");
+            // Prevent default behavior (Prevent file from being opened)
+            ev.preventDefault();
+            if (ev.dataTransfer.items) {
+                // Use DataTransferItemList interface to access the file(s)
+                [...ev.dataTransfer.items].forEach((item, i) => {
+                    // If dropped items aren't files, reject them
+                    if (item.kind === "file") {
+                        const file = item.getAsFile();
+                        console.log(`… file[${i}].name = ${file.name}`);
+                        imgFileChange(file);
+                    }
+                });
+            } else {
+                // Use DataTransfer interface to access the file(s)
+                [...ev.dataTransfer.files].forEach((file, i) => {
+                    console.log(`… file[${i}].name = ${file.name}`);
+                    imgFileChange(file);
+                });
+            }
+        }
+
+        function uploadClick() {
+            document.getElementById("file-upload").click();
+        };
+
+        function imgFileChange(file) {
+            if (file) {
+                var str = file.name;
+                const regex = /([\u4e00-\u9fa5]+).*?(B mode|SWE [MO]).*?([LR])(\d+(?:\.\d+)?)cm/;
+                const matches = str.match(regex);
+                if (matches) {
+                    info.name = matches[1];
+                    info.mode = matches[2];
+                    info.lr = matches[3];
+                    info.lrVal = matches[4];
+                    $('#para').text(`${JSON.stringify(info)}`);
+                    console.log("Chinese Character:", matches[1]);
+                    console.log("Mode:", matches[2]);
+                    console.log("L/R:", matches[3]);
+                    console.log("L/R Value:", matches[4]);
+                    console.log("Unit: cm");
+                }
+
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    $('#wrapper_img').empty();
+                    var img = $('<img id="image">');
+                    img.attr('src', e.target.result);
+                    img.appendTo('#wrapper_img');
+                    var img = document.getElementById("image");
+                    img.onload = function () {
+                        var canvas = document.getElementById('canvas');
+                        var context = canvas.getContext('2d');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        context.drawImage(img, 0, 0);
+
+                        jcropApi = $.Jcrop('#image', {
+                            onUpdate: function (e) {
+                            },
+                            onChange: function (e) {
+                            },
+                            onSelect: function (c) {
+                                $("#x").val(c.x);
+                                $("#y").val(c.y);
+                                $("#w").val(c.w);
+                                $("#h").val(c.h);
+
+                                clearCanvas("#cbox1");
+                                clearCanvas("#cbox2");
+                                clearCanvas("#cbox3");
+
+                                var checkedSingle = $('#ck_single:checked').val();
+                                var maf = $('#maf').val();
+
+                                $('#text').text(JSON.stringify(c));
+                                var imageData = context.getImageData(c.x, c.y, c.w, c.h);
+                                $('#d').text(`X:${c.x} Y:${c.y} W:${c.w} H:${c.h}`);
+                                var len = 0;
+                                dataArray = imageData.data;
+                                measure.count = dataArray.length;
+
+                                var sumR = 0;
+                                var sumG = 0;
+                                var sumB = 0;
+                                rgbArray = [];
+                                points = [];
+
+                                var loopLen = dataArray.length;
+                                if (checkedSingle) {
+                                    loopLen = 1;
+                                }
+                                for (var i = 0; i < loopLen; i += 4) {
+                                    var rgbObj = {
+                                        r: 0,
+                                        g: 0,
+                                        b: 0,
+                                    };
+                                    rgbObj.r = dataArray[i];
+                                    rgbObj.g = dataArray[i + 1];
+                                    rgbObj.b = dataArray[i + 2];
+                                    rgbArray.push(rgbObj);
+                                    sumR += rgbObj.r;
+                                    sumG += rgbObj.g;
+                                    sumB += rgbObj.b;
+                                    len++;
+                                }
+                                var rgbObj = {
+                                    r: 0,
+                                    g: 0,
+                                    b: 0,
+                                };
+                                var r = (sumR / len);
+                                var g = (sumG / len);
+                                var b = (sumB / len);
+
+                                var speed = mapping(r, g, b).toFixed(2);
+                                var p1 = map_range(speed, 0, 1, 10, 0.5).toFixed(2);
+
+                                // $('#rgb').css('background-color', `rgb(${r},${g},${b})`);
+                                // $('#rgb').text(`調整前 rgb(${r.toFixed()},${g.toFixed()},${b.toFixed()}`);
+                                ///////////////////
+                                var ar = r;
+                                var ag = g;
+                                var ab = b;
+
+                                var max = Math.max(r, g, b);
+                                var min = Math.min(r, g, b);
+                                var diff = min;
+                                if (max == g) {
+                                    diff = (g - 128);
+                                }
+                                ar = 2 * (ar - diff);
+                                ag = 2 * (ag - diff);
+                                ab = 2 * (ab - diff);
+
+                                if (ar > 255) {
+                                    ar = 255;
+                                }
+                                if (ag > 255) {
+                                    ag = 255;
+                                }
+                                if (ab > 255) {
+                                    ab = 255;
+                                }
+
+                                ///////////////////
+                                var speed = mapping(ar, ag, ab).toFixed(2);
+                                drawDot('colormapCanvas', speed);
+                                var p = map_range(speed, 0, 1, 10, 0.5).toFixed(2);
+
+                                $('#drop_zone').css('background-color', `rgb(${ar},${ag},${ab})`);
+
+                                resizeCanvas("#cbox1", c.w, c.h);
+                                resizeCanvas("#cbox2", c.w, c.h);
+                                resizeCanvas("#cbox3", c.w, c.h);
+                                resizeCanvas("#lcbox2", maf * c.w, maf * c.h);
+                                resizeCanvas("#lcbox3", maf * c.w, maf * c.h);
+
+                                var loopLen = rgbArray.length;
+                                if (checkedSingle) {
+                                    loopLen = 1;
+                                }
+
+                                for (var i = 0; i < loopLen; i++) {
+                                    var r = rgbArray[i].r;
+                                    var g = rgbArray[i].g;
+                                    var b = rgbArray[i].b;
+                                    var x = i % c.w;
+                                    var y = Math.floor(i / c.w);
+                                    drawPoint(x, y, r, g, b, "#cbox1", 1);
+
+                                    var max = Math.max(r, g, b);
+                                    var min = Math.min(r, g, b);
+                                    // R G B 三個數值裡 
+                                    // G 不是最大值時 就R G B都減去最小值
+                                    // G是最大值時，就都減去(G - 256 * A)
+                                    var diff = min;
+                                    if (max == g) {
+                                        diff = (g - 128);
+                                    }
+
+                                    r = 2 * (r - diff);
+                                    g = 2 * (g - diff);
+                                    b = 2 * (b - diff);
+
+                                    if (r > 255) {
+                                        r = 255;
+                                    }
+                                    if (g > 255) {
+                                        g = 255;
+                                    }
+                                    if (b > 255) {
+                                        b = 255;
+                                    }
+
+                                    var v = mapping(r, g, b);
+                                    var p = map_range(v, 0, 1, 10, 0.5);
+                                    points.push(p);
+                                    drawPoint(x, y, r, g, b, "#cbox2", 1);
+                                    drawPoint(x, y, diff * 2, diff * 2, diff * 2, "#cbox3", 1);
+
+                                    drawPoint(maf * x, maf * y, r, g, b, "#lcbox2", maf);
+                                    drawPoint(maf * x, maf * y, diff * 2, diff * 2, diff * 2, "#lcbox3", maf);
+                                }
+                                measure.count = points.length;
+                                measure.width = c.w;
+                                measure.height = c.h;
+
+                                measure.average = calculateAverage(points);
+                                measure.maximum = calculateMax(points);
+                                measure.minimum = calculateMin(points);
+                                measure.variance = calculateVariance(points);
+                                $('#para2').text(`avg: ${measure.average.toFixed(2)}, max: ${measure.maximum.toFixed(2)}, min: ${measure.minimum.toFixed(2)}, var: ${measure.variance.toFixed(2)}`);
+                            }
+                        });
+                    };
+                }
+                reader.readAsDataURL(file);
+            }
+        };
+
+        $("#selection-form").submit(function (event) {
+            event.preventDefault(); // Prevent form submission
+
+            const x = parseInt($("#x").val());
+            const y = parseInt($("#y").val());
+            const w = parseInt($("#w").val());
+            const h = parseInt($("#h").val());
+
+            const presetCoords = [x, y, x + w, y + h];
+            jcropApi.setSelect(presetCoords);
+        });
+
+        function resizeCanvas(id, w, h) {
+            var canvas = $(id)[0];
+            const ctx = canvas.getContext("2d");
+            ctx.canvas.width = w;
+            ctx.canvas.height = h;
+        }
+
+        function clearCanvas(id) {
+            var canvas = $(id)[0];
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function drawPoint(x, y, r, g, b, id, size) {
+            var canvas = $(id)[0];
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillRect(x, y, size, size);
+        }
+
+        // Calculate the average
+        function calculateAverage(data) {
+            const sum = data.reduce((acc, value) => acc + value, 0);
+            return sum / data.length;
+        }
+
+        // Calculate the maximum
+        function calculateMax(arr) {
+            let len = arr.length;
+            let max = -Infinity;
+
+            while (len--) {
+                max = arr[len] > max ? arr[len] : max;
+            }
+            return max;
+        }
+
+        // Calculate the minimum
+        function calculateMin(arr) {
+            let len = arr.length;
+            let min = Infinity;
+
+            while (len--) {
+                min = arr[len] < min ? arr[len] : min;
+            }
+
+            return min;
+        }
+
+        // Calculate the variance
+        function calculateVariance(data) {
+            const mean = calculateAverage(data);
+            const sumOfSquares = data.reduce((acc, value) => acc + (value - mean) ** 2, 0);
+            return sumOfSquares / (data.length - 1);
+        }
+
+        function imgChange(inp) {
+            //in memory canvas
+            if (inp.files && inp.files[0]) {
+                imgFileChange(inp.files[0]);
+            }
+        };
+
+        function map_range(value, low1, high1, low2, high2) {
+            return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
+        }
+
+        function download() {
+            const utf8Bom = "\uFEFF"; // UTF-8 BOM character
+
+            const csvContent = [
+                '姓名,模式,部位,,,,,',
+                `${info.name},${info.mode},${info.lr}${info.lrVal},,`,
+                '平均,最大,最小,變異數,總數,Width,Height',
+                `${measure.average.toFixed(2)},${measure.maximum.toFixed(2)},${measure.minimum.toFixed(2)},${measure.variance.toFixed(2)},${measure.count},${measure.width},${measure.height},`,
+            ];
+
+            const pointArray = [];
+            const arrayLength = measure.count;
+            const width = measure.width;
+            const height = measure.width;
+
+            pointArray.push("選取區域");
+            for (let i = 0; i < arrayLength; i++) {
+                pointArray.push(points[i].toFixed(2));
+                if ((i % width) == 0 && (i != 0)) {
+                    pointArray.push('\r\n');
+                }
+            }
+
+            csvContent.push(pointArray.join(','));
+
+            const csvBlob = new Blob([utf8Bom, csvContent.join('\n')], { type: 'text/csv' });
+            const csvUrl = URL.createObjectURL(csvBlob);
+
+            const a = document.createElement('a');
+            a.href = csvUrl;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}.csv`;
+            a.click();
+
+            URL.revokeObjectURL(csvUrl);
+        }
+    </script>
+</body>
+
+</html>
