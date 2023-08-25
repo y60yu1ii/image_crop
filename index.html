@@ -52,7 +52,7 @@
         <input type="number" id="maf" name="maf" value="2"><br>
         <button onclick="download()">下載數據</button>
     </div>
-    <div style="display:flex; flex-direction: row; align-items: center;justify-content:space-between">
+    <div style="display:flex; flex-direction: row; align-items: center;justify-content:center; text-align: center;">
         <canvas id="colormapCanvas" width="10" height="200"></canvas>
         <div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
             <input id="file-upload" type="file" accept="image/*" onchange="imgChange(this)" />
@@ -62,31 +62,65 @@
             <div class="text" id="para2">參數2</div>
             </br>
         </div>
-        <div>-></div>
-        <div>調整後</div>
-        <canvas class id="lcbox2"></canvas>
-        <div>灰階</div>
-        <canvas class id="lcbox3"></canvas>
+        <div>
+            <p>調整前</p>
+            <div id="lbbox1"></div>
+            <canvas class id="lcbox1"></canvas>
+        </div>
+        <div>
+
+            <p>調整後</p>
+            <div id="lbbox2"></div>
+            <canvas class id="lcbox2"></canvas>
+        </div>
+        <div>
+
+            <p>灰階</p>
+            <div id="lbbox3"></div>
+            <canvas class id="lcbox3"></canvas>
+        </div>
     </div>
+    <hr>
+    <div style="display:flex; flex-direction: row; align-items: center;justify-content:center; text-align: center;">
+        <div>
+            <h5>指定圈選區域</h5>
+            <form id="selection-form">
+                <label for="x">X</label>
+                <input type="number" id="x" name="x" value="300"><br>
+
+                <label for="y">Y</label>
+                <input type="number" id="y" name="y" value="200"><br>
+
+                <label for="w">W</label>
+                <input type="number" id="w" name="w" value="20"><br>
+
+                <label for="h">H</label>
+                <input type="number" id="h" name="h" value="20"><br>
+
+                <input type="submit" value="套用選擇">
+            </form>
+
+        </div>
+        <div>
+            <form id="check-form">
+                <label for="e">查詢速度值</label>
+                <input type="number" step="0.01" id="s" name="s" value="5.79">m/s<br>
+                <label for="e">上下左右查找距離</label>
+                <input type="number" id="e" name="e" value="10">px<br>
+                <label for="e">找出最接近的</label>
+                <input type="number" id="n" name="n" value="5">個<br>
+                <input type="submit" value="執行查找">
+                <div id="checktext"></div>
+                <div id="checktext2"></div>
+            </form>
+        </div>
+    </div>
+    <hr>
+    <br>
     <div id="wrapper_img">
         <img id="image" />
     </div>
     <canvas id="canvas" style="display: none;"></canvas>
-    <h5>指定圈選區域</h5>
-    <form id="selection-form">
-        <label for="x">X</label>
-        <input type="number" id="x" name="x" value="200"><br>
-
-        <label for="y">Y</label>
-        <input type="number" id="y" name="y" value="200"><br>
-
-        <label for="w">W</label>
-        <input type="number" id="w" name="w" value="10"><br>
-
-        <label for="h">H</label>
-        <input type="number" id="h" name="h" value="10"><br>
-        <input type="submit" value="套用選擇">
-    </form>
     <hr>
     <div style="display:flex; flex-direction: row; align-items: center; justify-content: center;">
         <div>調整前</div>
@@ -119,6 +153,10 @@
         var greyArray = [];
         var points = [];
         var jcropApi = {};
+
+        var isCheckSpeedPoints = false;
+        var speedPointXY = [];
+        var speedPoints = [];
 
         function drawVerticalColormap(canvasId, colorPoints) {
             const canvas = document.getElementById(canvasId);
@@ -178,25 +216,32 @@
                 if (max2 == g) {
                     v = ((r - 127) / 128) * 1 / 10;
                 } else {
-                    v = (g / 255) * 2 / 10 + 1 / 10;
+                    v = (g / 256) * 2 / 10 + 1 / 10;
                 }
             }
             if (max == g) {
                 var max2 = Math.max(r, b);
                 if (max2 == r) {
-                    v = ((255 - r) / 255) * 2 / 10 + 3 / 10;
+                    v = ((256 - r) / 256) * 2 / 10 + 3 / 10;
                 } else {
-                    v = (b / 255) * 2 / 10 + 5 / 6;
+                    v = (b / 256) * 2 / 10 + 5 / 10;
                 }
             }
 
             if (max == b) {
                 var max2 = Math.max(r, g);
                 if (max2 == g) {
-                    v = ((255 - g) / 255) * 2 / 10 + 7 / 10;
+                    v = ((256 - g) / 256) * 2 / 10 + 7 / 10;
                 } else {
-                    v = (b / 255) * 1 / 10 + 9 / 10;
+                    v = ((b - 127) / 128) * 1 / 10 + 9 / 10;
                 }
+            }
+
+            if (v > 1) {
+                v = 1;
+            }
+            if (v < 0) {
+                v = 0;
             }
             return v;
 
@@ -280,6 +325,9 @@
                                 clearCanvas("#cbox1");
                                 clearCanvas("#cbox2");
                                 clearCanvas("#cbox3");
+                                clearCanvas("#lcbox1");
+                                clearCanvas("#lcbox2");
+                                clearCanvas("#lcbox3");
 
                                 var checkedSingle = $('#ck_single:checked').val();
                                 var maf = $('#maf').val();
@@ -325,12 +373,10 @@
                                 var g = (sumG / len);
                                 var b = (sumB / len);
 
-                                var speed = mapping(r, g, b).toFixed(2);
-                                var p1 = map_range(speed, 0, 1, 10, 0.5).toFixed(2);
+                                var v = mapping(r, g, b).toFixed(2);
+                                var p1 = map_range(v, 0, 1, 10, 0.5).toFixed(2);
 
-                                // $('#rgb').css('background-color', `rgb(${r},${g},${b})`);
-                                // $('#rgb').text(`調整前 rgb(${r.toFixed()},${g.toFixed()},${b.toFixed()}`);
-                                ///////////////////
+                                /////////////////
                                 var ar = r;
                                 var ag = g;
                                 var ab = b;
@@ -355,18 +401,41 @@
                                     ab = 255;
                                 }
 
-                                ///////////////////
-                                var speed = mapping(ar, ag, ab).toFixed(2);
-                                drawDot('colormapCanvas', speed);
-                                var p = map_range(speed, 0, 1, 10, 0.5).toFixed(2);
+                                if (ar < 0) {
+                                    ar = 0;
+                                }
+                                if (ag < 0) {
+                                    ag = 0;
+                                }
+                                if (ab < 0) {
+                                    ab = 0;
+                                }
+
+                                /////////////////
+                                var v2 = mapping(ar, ag, ab).toFixed(2);
+                                drawDot('colormapCanvas', v2);
+                                var p2 = map_range(v2, 0, 1, 10, 0.5).toFixed(2);
 
                                 $('#drop_zone').css('background-color', `rgb(${ar},${ag},${ab})`);
-
-                                resizeCanvas("#cbox1", c.w, c.h);
-                                resizeCanvas("#cbox2", c.w, c.h);
-                                resizeCanvas("#cbox3", c.w, c.h);
-                                resizeCanvas("#lcbox2", maf * c.w, maf * c.h);
-                                resizeCanvas("#lcbox3", maf * c.w, maf * c.h);
+                                $('#lbbox1').text(`${v} ${p1}m/s rgb(${r.toFixed()},${g.toFixed()},${b.toFixed()}) . `);
+                                $('#lbbox2').text(`${v2} ${p2}m/s rgb(${ar.toFixed()},${ag.toFixed()},${ab.toFixed()}) . `);
+                                $('#lbbox3').text(`rgb(${diff.toFixed()},${diff.toFixed()},${diff.toFixed()}) . `);
+                                //resize will clear canvas
+                                if (checkedSingle) {
+                                    resizeCanvas("#cbox1", 1, 1);
+                                    resizeCanvas("#cbox2", 1, 1);
+                                    resizeCanvas("#cbox3", 1, 1);
+                                    resizeCanvas("#lcbox1", maf * 1, maf * 1);
+                                    resizeCanvas("#lcbox2", maf * 1, maf * 1);
+                                    resizeCanvas("#lcbox3", maf * 1, maf * 1);
+                                } else {
+                                    resizeCanvas("#cbox1", c.w, c.h);
+                                    resizeCanvas("#cbox2", c.w, c.h);
+                                    resizeCanvas("#cbox3", c.w, c.h);
+                                    resizeCanvas("#lcbox1", maf * c.w, maf * c.h);
+                                    resizeCanvas("#lcbox2", maf * c.w, maf * c.h);
+                                    resizeCanvas("#lcbox3", maf * c.w, maf * c.h);
+                                }
 
                                 var loopLen = rgbArray.length;
                                 if (checkedSingle) {
@@ -380,6 +449,7 @@
                                     var x = i % c.w;
                                     var y = Math.floor(i / c.w);
                                     drawPoint(x, y, r, g, b, "#cbox1", 1);
+                                    drawPoint(maf * x, maf * y, r, g, b, "#lcbox1", maf);
 
                                     var max = Math.max(r, g, b);
                                     var min = Math.min(r, g, b);
@@ -405,6 +475,16 @@
                                         b = 255;
                                     }
 
+                                    if (r < 0) {
+                                        r = 0;
+                                    }
+                                    if (g < 0) {
+                                        g = 0;
+                                    }
+                                    if (b < 0) {
+                                        b = 0;
+                                    }
+
                                     var v = mapping(r, g, b);
                                     var p = map_range(v, 0, 1, 10, 0.5);
                                     points.push(p);
@@ -414,6 +494,7 @@
                                     drawPoint(maf * x, maf * y, r, g, b, "#lcbox2", maf);
                                     drawPoint(maf * x, maf * y, diff * 2, diff * 2, diff * 2, "#lcbox3", maf);
                                 }
+
                                 measure.count = points.length;
                                 measure.width = c.w;
                                 measure.height = c.h;
@@ -423,6 +504,9 @@
                                 measure.minimum = calculateMin(points);
                                 measure.variance = calculateVariance(points);
                                 $('#para2').text(`avg: ${measure.average.toFixed(2)}, max: ${measure.maximum.toFixed(2)}, min: ${measure.minimum.toFixed(2)}, var: ${measure.variance.toFixed(2)}`);
+                                if (isCheckSpeedPoints) {
+                                    speedPoints.push(measure.average.toFixed(2));
+                                }
                             }
                         });
                     };
@@ -442,6 +526,79 @@
             const presetCoords = [x, y, x + w, y + h];
             jcropApi.setSelect(presetCoords);
         });
+
+
+        $("#check-form").submit(async function (event) {
+            event.preventDefault(); // Prevent form submission
+            isCheckSpeedPoints = true;
+            speedPoints = [];
+            speedPointXY = [];
+
+            $('#checktext').text("查找中...");
+
+            const x = parseInt($("#x").val());
+            const y = parseInt($("#y").val());
+            const w = parseInt($("#w").val());
+            const h = parseInt($("#h").val());
+            const e = parseInt($("#e").val());
+            const n = parseInt($("#n").val());
+            const s = parseFloat($("#s").val());
+
+            var ori = {
+                x: x,
+                y: y
+            }
+
+            for (let j = y - e; j <= y + e; j++) {
+                for (let i = x - e; i <= x + e; i++) {
+                    const presetCoords = [i, j, i + w, j + h];
+                    jcropApi.setSelect(presetCoords);
+                    speedPointXY.push({ x: i, y: j });
+                    $('#checktext').text(`查找中... ${i} ${j}`);
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                }
+            }
+            var closestPoints = findClosestPoints(s, speedPoints, n)
+            var results = closestPoints.map(item => ({
+                point: item.point,
+                index: item.index,
+                xy: speedPointXY[item.index]
+            }));
+            var resultDiv = $('#checktext');
+
+            results.forEach(item => {
+                let x = speedPointXY[item.index].x;
+                let y = speedPointXY[item.index].y;
+                var element = $('<div>').text(`Point: ${item.point}, XY: ${x},${y}, Idx: ${item.index} 👆`);
+
+                element.click(function () {
+                    const presetCoords = [x, y, x + w, y + h];
+                    jcropApi.setSelect(presetCoords);
+                });
+
+                resultDiv.append(element);
+            })
+            isCheckSpeedPoints = false;
+            const presetCoords = [ori.x, ori.y, ori.x + w, ori.y + h];
+            jcropApi.setSelect(presetCoords);
+
+        });
+
+        function findClosestPoints(referencePoint, speedPoints, numberOfClosestPoints) {
+            const differences = speedPoints.map((point, index) => ({
+                point: point,
+                difference: Math.round(Math.abs(referencePoint - point) * 100) / 100,
+                index: index
+            }));
+
+            differences.sort((a, b) => a.difference - b.difference);
+
+            const closestPoints = differences.slice(0, numberOfClosestPoints).map(item => ({
+                point: item.point,
+                index: item.index
+            }));
+            return closestPoints;
+        }
 
         function resizeCanvas(id, w, h) {
             var canvas = $(id)[0];
