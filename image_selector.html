@@ -1,0 +1,655 @@
+<!-- Version: V1.5.6 -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Selector</title>
+    <style>
+        #extractedCanvas {
+            background-color: black;
+        }
+
+        #extractedCanvas2 {
+            background-color: black;
+        }
+
+        #extractedCanvas3 {
+            background-color: black;
+        }
+
+
+        .separator {
+            border-top: 1px solid #000;
+            margin: 10px 0;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+</head>
+
+<body>
+    <h2>請圍成封閉的曲線v1.4</h2>
+    <input type="file" id="imageInput" onclick="confirmImageChange()">
+    <div class="text" id="para">參數</div>
+    <div class="text" id="para2">參數</div>
+    <div class="separator"></div>
+    <button onclick="extractRGB()">Extract RGB</button>
+    <button onclick="undo()">Undo</button>
+    <button onclick="redo()">Redo</button>
+    <button onclick="download()">下載數據</button>
+    <!-- <button onclick="drawChart()">Histogram</button> -->
+
+    <br><br>
+    <!-- <canvas id="chartCanvas" style="border: 1px solid black;"></canvas> -->
+    Original Image:
+    <canvas id="canvas" style="border: 1px solid black;"></canvas>
+    <br>
+    Extracted Pixels:
+    <canvas id="extractedCanvas" style="border: 1px solid black;"></canvas>
+    <canvas id="extractedCanvas2" style="display: none;"></canvas>
+    <canvas id="extractedCanvas3" style="display: none;"></canvas>
+    <canvas id="extractedCanvas4" style="display: none;"></canvas>
+    <canvas id="extractedCanvas5" style="display: none;"></canvas>
+    <canvas id="extractedCanvas6" style="display: none;"></canvas>
+    <canvas id="extractedCanvas7" style="display: none;"></canvas>
+    <br>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false, antialias: false });
+
+        const extractedCanvas = document.getElementById('extractedCanvas');
+        const extractedCtx = extractedCanvas.getContext('2d');
+
+        const extractedCanvas2 = document.getElementById('extractedCanvas2');
+        const extractedCtx2 = extractedCanvas2.getContext('2d');
+
+        const extractedCanvas3 = document.getElementById('extractedCanvas3');
+        const extractedCtx3 = extractedCanvas3.getContext('2d');
+
+        const extractedCanvas4 = document.getElementById('extractedCanvas4');
+        const extractedCtx4 = extractedCanvas4.getContext('2d');
+
+        const extractedCanvas5 = document.getElementById('extractedCanvas5');
+        const extractedCtx5 = extractedCanvas5.getContext('2d');
+
+        const extractedCanvas6 = document.getElementById('extractedCanvas6');
+        const extractedCtx6 = extractedCanvas6.getContext('2d');
+
+        const extractedCanvas7 = document.getElementById('extractedCanvas7');
+        const extractedCtx7 = extractedCanvas7.getContext('2d');
+
+        let img;
+        let isDrawing = false;
+        let paths = [];
+        let currentPathIndex = -1;
+        let selectionCount = 0;
+        let previouslySelectedPixels = new Set();
+        let selectedPixels1 = new Set();
+        let selectedPixels2 = new Set();
+        let points = [];
+        let points1 = [];
+        let points2 = [];
+        var measure1 = {};
+        var measure2 = {};
+
+        var info = {
+            name: "",
+            mode: "",
+            lr: "",
+            lrVal: "",
+        };
+
+        function resetState() {
+            img = null;
+            isDrawing = false;
+            paths = [];
+            currentPathIndex = -1;
+            selectionCount = 0;
+            previouslySelectedPixels.clear();
+            selectedPixels1.clear();
+            selectedPixels2.clear();
+            measure1 = {};
+            measure2 = {};
+            points1 = [];
+            points2 = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            extractedCtx.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx2.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx3.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx4.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx5.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx6.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+            extractedCtx7.clearRect(0, 0, extractedCanvas.width, extractedCanvas.height);
+        }
+
+        function confirmImageChange() {
+            if (img) {
+                if (!confirm("Do you want to clear the current image and select a new one?")) {
+                    event.preventDefault();
+                } else {
+                    resetState();
+                    document.getElementById('imageInput').value = "";  // Reset file input
+                }
+            }
+        }
+
+        function loadImage(event) {
+            img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                extractedCanvas.width = img.width;
+                extractedCanvas.height = img.height;
+
+                extractedCanvas2.width = img.width;
+                extractedCanvas2.height = img.height;
+
+                extractedCanvas3.width = img.width;
+                extractedCanvas3.height = img.height;
+
+                extractedCanvas4.width = img.width;
+                extractedCanvas4.height = img.height;
+
+                extractedCanvas5.width = img.width;
+                extractedCanvas5.height = img.height;
+
+                extractedCanvas6.width = img.width;
+                extractedCanvas6.height = img.height;
+
+                extractedCanvas7.width = img.width;
+                extractedCanvas7.height = img.height;
+
+                ctx.drawImage(img, 0, 0);
+            };
+            img.src = URL.createObjectURL(event.target.files[0]);
+            extractNameData(event.target.files[0].name);
+        }
+
+        function extractNameData(name) {
+            const regex = /([\u4e00-\u9fa5]+).*?(B mode|SWE [MO]).*?([LR])(\d+(?:\.\d+)?)cm/;
+            const matches = name.match(regex);
+            if (matches) {
+                info.name = matches[1];
+                info.mode = matches[2];
+                info.lr = matches[3];
+                info.lrVal = matches[4];
+                $('#para').text(`${JSON.stringify(info)}`);
+            }
+        }
+
+        document.getElementById('imageInput').addEventListener('change', loadImage);
+
+        canvas.onmousedown = (e) => {
+            isDrawing = true;
+            const x = e.offsetX;
+            const y = e.offsetY;
+            let newPath = new Path2D();
+            newPath.moveTo(x, y);
+            if (currentPathIndex < paths.length - 1) {
+                paths = paths.slice(0, currentPathIndex + 1);
+            }
+            paths.push(newPath);
+            currentPathIndex++;
+        };
+
+        canvas.onmousemove = (e) => {
+            if (!isDrawing) return;
+            const x = e.offsetX;
+            const y = e.offsetY;
+            paths[currentPathIndex].lineTo(x, y);
+            redrawCanvas();
+        };
+
+        canvas.onmouseup = () => {
+            isDrawing = false;
+        };
+
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2;
+            for (let i = 0; i <= currentPathIndex; i++) {
+                ctx.stroke(paths[i]);
+            }
+        }
+
+        function undo() {
+            if (currentPathIndex >= 0) {
+                currentPathIndex--;
+                redrawCanvas();
+            }
+
+        }
+
+        function redo() {
+            if (currentPathIndex < paths.length - 1) {
+                currentPathIndex++;
+                redrawCanvas();
+            }
+        }
+
+        function drawChart() {
+
+            // var counts = new Array(11).fill(0);
+
+            // points1.forEach(function (point) {
+            //     var p = point.p;
+            //     if (p >= 0.4 && p <= 10) {
+            //         var index = Math.floor((p - 0.4) * 10);
+            //         counts[index]++;
+            //     }
+            // });
+            // var minX = 0.4;
+            // var maxX = 10;
+
+            // var maxY = calculateMax(counts);
+
+            // var canvas = document.getElementById("chartCanvas");
+            // var ctx = canvas.getContext("2d");
+
+            // var scaleX = canvas.width / (maxX - minX);
+            // var scaleY = canvas.height / maxY;
+
+            // ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+
+            // for (var i = 0; i < counts.length; i++) {
+            //     var x = (i / 10) * (maxX - minX) * scaleX;
+            //     var y = canvas.height - counts[i] * scaleY;
+            //     var w = (1 / 10) * (maxX - minX) * scaleX; // Width of each bar
+            //     var h = counts[i] * scaleY;
+
+            //     ctx.fillStyle = 'steelblue'; // Adjust the color as needed
+            //     ctx.fillRect(x, y, w, h);
+            //     // Draw X-axis label below each bar
+            //     ctx.fillStyle = 'black';
+            //     ctx.font = '12px Arial';
+            //     ctx.textAlign = 'center';
+            //     ctx.fillText((0.4 + i * 0.1).toFixed(1) + ' - ' + (0.4 + (i + 1) * 0.1).toFixed(1), x + w / 2, canvas.height + 15);
+            // }
+
+
+            // for (var i = 0; i < points2.length; i++) {
+            //     var binIndex = Math.floor(points2[i].p / binWidth);
+            //     binCounts[binIndex]++;
+            // }
+
+            // var canvas2 = document.getElementById("chartCanvas2");
+            // var ctx2 = canvas2.getContext("2d");
+            // var chartWidth = canvas2.width;
+            // var chartHeight = canvas2.height;
+            // var maxCount = Math.max(...binCounts);
+            // var barWidth = chartWidth / numBins;
+            // var barSpacing = 2;
+
+            // for (var i = 0; i < numBins; i++) {
+            //     var barHeight = (binCounts[i] / maxCount) * chartHeight;
+            //     var x = i * (barWidth + barSpacing);
+            //     var y = chartHeight - barHeight;
+            //     ctx2.fillStyle = "steelblue";
+            //     ctx2.fillRect(x, y, barWidth, barHeight);
+            // }
+        }
+
+        function isWhite(r, g, b) {
+            return r >= 252 && g >= 252 && b >= 252;
+        }
+
+        function isNearGrayScale(r, g, b) {
+            return Math.abs(r - g) <= 30 && Math.abs(r - b) <= 30 && Math.abs(g - b) <= 30;
+        }
+
+        function mapping(r, g, b) {
+            var v = 0;
+
+            // When b is the maximum
+            if (b >= r && b >= g) {
+                if (b < 128) {
+                    v = 0.4;
+                } else if (Math.abs(r - g) <= 2) {
+                    v = (b - 127) * 0.0075 + 0.4;
+                } else if (Math.abs(r - g) > 2) {
+                    if (g < r) {
+                        v = (b - 127) * 0.00735 + 0.4;
+                    } else {
+                        v = g * 0.00735 + 1.408;
+                    }
+                }
+            }
+
+            // When g is the maximum
+            else if (g >= r && g >= b) {
+                if (Math.abs(b - r) > 2) {
+                    if (b > r) {
+                        v = (255 - b) * 0.00735 + 3.328;
+                    } else {
+                        v = r * 0.00735 + 5.248;
+                    }
+                } else if (Math.abs(b - r) <= 2) {
+                    v = 5.248;
+                }
+            }
+
+            // When r is the maximum
+            else if (r >= g && r >= b) {
+                if (r <= 128) {
+                    v = 10;
+                } else if (Math.abs(g - b) > 2) {
+                    if (g > b) {
+                        v = (255 - g) * 0.00735 + 7.168;
+                    } else {
+                        v = (255 - r) * 0.00735 + 9.088;
+                    }
+                } else if (Math.abs(g - b) <= 2) {
+                    v = (255 - r) * 0.0073 + 9.088;
+                }
+            }
+            return v;
+        }
+
+        function adjustRGB(r, g, b) {
+            // var max = Math.max(r, g, b);
+            var min = Math.min(r, g, b);
+            // R G B 三個數值裡 
+            // G 不是最大值時 就R G B都減去最小值
+            // G是最大值時，就都減去(G - 256 * A)
+            var d = min;
+            // if (max == g) {
+            //     d = (g - 128);
+            // }
+
+            r = 2 * (r - d);
+            g = 2 * (g - d);
+            b = 2 * (b - d);
+
+            if (r > 255) {
+                r = 255;
+            }
+            if (g > 255) {
+                g = 255;
+            }
+            if (b > 255) {
+                b = 255;
+            }
+
+            if (r < 0) {
+                r = 0;
+            }
+            if (g < 0) {
+                g = 0;
+            }
+            if (b < 0) {
+                b = 0;
+            }
+
+            return {
+                r, g, b, d
+            }
+        }
+
+        function extractRGB() {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    let isInAnyPath = false;
+                    for (let i = 0; i <= currentPathIndex; i++) {
+                        if (ctx.isPointInPath(paths[i], x, y)) {
+                            isInAnyPath = true;
+                            break;
+                        }
+                    }
+                    const pixelKey = `${x}-${y}`;
+                    const index = (y * canvas.width + x) * 4;
+                    const r = imageData.data[index];
+                    const g = imageData.data[index + 1];
+                    const b = imageData.data[index + 2];
+                    if (isInAnyPath && !previouslySelectedPixels.has(pixelKey) && !isWhite(r, g, b) && !isNearGrayScale(r, g, b)) {
+                        previouslySelectedPixels.add(pixelKey);
+                        let a = 255;
+                        let rgb = adjustRGB(r, g, b);
+
+                        extractedCtx.fillStyle = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + (a / 255) + ")";
+                        extractedCtx.fillRect(x, y, 1, 1);
+                    } else {
+                        previouslySelectedPixels.delete(pixelKey);
+                        extractedCtx.clearRect(x, y, 1, 1);
+                        // if (isInAnyPath && !isWhite(r, g, b) && !isNearGrayScale(r, g, b)) {
+                        // extractedCtx.fillStyle = "white";
+                        // extractedCtx.fillRect(x, y, 1, 1);
+                        // }
+                    }
+                }
+            }
+
+            extractData();
+        }
+
+
+        function drawSelection() {
+            extractedCtx2.clearRect(0, 0, canvas.width, canvas.height);
+            extractedCtx3.clearRect(0, 0, canvas.width, canvas.height);
+            extractedCtx4.clearRect(0, 0, canvas.width, canvas.height);
+            for (var i = 0; i < points1.length; i++) {
+                var p = points1[i];
+                // extractedCtx2.fillStyle = p.rgba;
+                extractedCtx2.fillStyle = "rgba(" + p.rgb.r + "," + p.rgb.g + "," + p.rgb.b + ",1)";
+                extractedCtx2.fillRect(p.x, p.y, 1, 1);
+
+                extractedCtx3.fillStyle = "rgba(" + p.rgbO.r + "," + p.rgbO.g + "," + p.rgbO.b + ",1)";
+                extractedCtx3.fillRect(p.x, p.y, 1, 1);
+
+                extractedCtx4.fillStyle = "rgba(" + p.rgb.d + "," + p.rgb.d + "," + p.rgb.d + ",1)";
+                extractedCtx4.fillRect(p.x, p.y, 1, 1);
+            }
+
+            extractedCtx5.clearRect(0, 0, canvas.width, canvas.height);
+            extractedCtx6.clearRect(0, 0, canvas.width, canvas.height);
+            extractedCtx7.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (var i = 0; i < points2.length; i++) {
+                var p = points2[i];
+
+                extractedCtx5.fillStyle = "rgba(" + p.rgb.r + "," + p.rgb.g + "," + p.rgb.b + ",1)";
+                extractedCtx5.fillRect(p.x, p.y, 1, 1);
+
+                extractedCtx6.fillStyle = "rgba(" + p.rgbO.r + "," + p.rgbO.g + "," + p.rgbO.b + ",1)";
+                extractedCtx6.fillRect(p.x, p.y, 1, 1);
+
+                extractedCtx7.fillStyle = "rgba(" + p.rgb.d + "," + p.rgb.d + "," + p.rgb.d + ",1)";
+                extractedCtx7.fillRect(p.x, p.y, 1, 1);
+            }
+
+        }
+
+        function extractData() {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            points = [];
+            for (var key of previouslySelectedPixels) {
+                const xy = key.split("-");
+                const x = Number.parseInt(xy[0]);
+                const y = Number.parseInt(xy[1]);
+                // console.log(`${x}, ${y}`);
+                const index = (y * canvas.width + x) * 4;
+                const r = imageData.data[index];
+                const g = imageData.data[index + 1];
+                const b = imageData.data[index + 2];
+                let rgb = adjustRGB(r, g, b);
+                const p = Number.parseFloat(mapping(rgb.r, rgb.g, rgb.b).toFixed(2));
+                var point = {
+                    x: x,
+                    y: y,
+                    rgb: rgb,
+                    rgbO: { r, g, b },
+                    p: p
+                };
+                points.push(point);
+                // console.log(`${x}, ${y}--> ${p}`);
+            }
+
+            var measure = {
+                count: 0,
+                average: 0,
+                maximum: 0,
+                minimum: 0,
+                variance: 0,
+                width: 0,
+                height: 0,
+                x: 0,
+                y: 0
+            };
+
+            let speeds = points.map((e) => e.p);
+            measure.count = speeds.length;
+            measure.average = calculateAverage(speeds);
+            measure.maximum = calculateMax(speeds);
+            measure.minimum = calculateMin(speeds);
+            measure.variance = calculateVariance(speeds);
+            $('#para2').text(`avg: ${measure.average.toFixed(2)}, max: ${measure.maximum.toFixed(2)}, min: ${measure.minimum.toFixed(2)}, var: ${measure.variance.toFixed(2)}`);
+
+            let Xs = points.map((e) => e.x);
+            let Ys = points.map((e) => e.x);
+            measure.x = calculateMin(Xs);
+            measure.y = calculateMin(Ys);
+            measure.width = calculateMax(Xs) - measure.x;
+            measure.height = calculateMax(Ys) - measure.y;
+
+            if (selectedPixels1.size == 0) {
+                selectedPixels1 = new Set(previouslySelectedPixels);
+                measure1 = measure;
+                points1 = [];
+                points1 = [...points];
+            } else {
+                selectedPixels2 = new Set(previouslySelectedPixels);
+                measure2 = measure;
+                points2 = [];
+                points2 = [...points];
+            }
+        }
+
+
+        function download() {
+            drawSelection();
+            const utf8Bom = "\uFEFF"; // UTF-8 BOM character
+
+            var m = measure1;
+            var csvContent1 = [
+                '姓名,模式,部位,,,,,',
+                `${info.name},${info.mode},${info.lr}${info.lrVal},,皮膚`,
+                '平均,最大,最小,變異數,總數,W,H',
+                `${m.average.toFixed(2)},${m.maximum.toFixed(2)},${m.minimum.toFixed(2)},${m.variance.toFixed(2)},${m.count},${m.width},${m.height}`,
+                'Speed,X,Y,R,G,B,Diff,',
+            ];
+
+            var m2 = measure2;
+            var csvContent2 = [
+                '姓名,模式,部位,,,,,',
+                `${info.name},${info.mode},${info.lr}${info.lrVal},,皮下組織`,
+                '平均,最大,最小,變異數,總數,W,H',
+                `${m2.average.toFixed(2)},${m2.maximum.toFixed(2)},${m2.minimum.toFixed(2)},${m2.variance.toFixed(2)},${m2.count},${m2.width},${m2.height}`,
+                'Speed,X,Y,R,G,B,Diff,',
+            ];
+
+
+            var point1Content = points1.map((e) => `${e.p},${e.x},${e.y},${e.rgb.r},${e.rgb.g},${e.rgb.b},${e.rgb.d}`);
+            csvContent1 = csvContent1.concat(point1Content);
+
+            var point2Content = points2.map((e) => `${e.p},${e.x},${e.y},${e.rgb.r},${e.rgb.g},${e.rgb.b},${e.rgb.d}`);
+            csvContent2 = csvContent2.concat(point2Content);
+
+
+            const csvBlob1 = new Blob([utf8Bom, csvContent1.join('\r\n')], { type: 'text/csv' });
+            const csvBlob2 = new Blob([utf8Bom, csvContent2.join('\r\n')], { type: 'text/csv' });
+            const csvUrl1 = URL.createObjectURL(csvBlob1);
+            const csvUrl2 = URL.createObjectURL(csvBlob2);
+
+
+            const data1Url = extractedCanvas2.toDataURL('image/bmp');
+            const data2Url = extractedCanvas3.toDataURL('image/bmp');
+            const data3Url = extractedCanvas4.toDataURL('image/bmp');
+            const data4Url = extractedCanvas5.toDataURL('image/bmp');
+            const data5Url = extractedCanvas6.toDataURL('image/bmp');
+            const data6Url = extractedCanvas7.toDataURL('image/bmp');
+
+            const a = document.createElement('a');
+            a.href = csvUrl1;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮膚.csv`;
+            a.click();
+            URL.revokeObjectURL(csvUrl1);
+            a.href = csvUrl2;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮下組織.csv`;
+            a.click();
+            URL.revokeObjectURL(csvUrl2);
+            a.href = data1Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮膚.bmp`;
+            a.click();
+            URL.revokeObjectURL(data1Url);
+
+            a.href = data2Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮膚原.bmp`;
+            a.click();
+            URL.revokeObjectURL(data1Url);
+
+            a.href = data3Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮膚灰.bmp`;
+            a.click();
+            URL.revokeObjectURL(data1Url);
+
+            a.href = data4Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮下組織.bmp`;
+            a.click();
+            URL.revokeObjectURL(data2Url);
+
+            a.href = data5Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮下組織原.bmp`;
+            a.click();
+            URL.revokeObjectURL(data2Url);
+
+            a.href = data6Url;
+            a.download = `${info.name}_${info.mode}_${info.lr}${info.lrVal}_皮下組織灰.bmp`;
+            a.click();
+            URL.revokeObjectURL(data2Url);
+        }
+
+        // Calculate the average
+        function calculateAverage(data) {
+            const sum = data.reduce((acc, value) => acc + value, 0);
+            return sum / data.length;
+        }
+
+        // Calculate the maximum
+        function calculateMax(arr) {
+            let len = arr.length;
+            let max = -Infinity;
+
+            while (len--) {
+                max = arr[len] > max ? arr[len] : max;
+            }
+            return max;
+        }
+
+        // Calculate the minimum
+        function calculateMin(arr) {
+            let len = arr.length;
+            let min = Infinity;
+
+            while (len--) {
+                min = arr[len] < min ? arr[len] : min;
+            }
+
+            return min;
+        }
+
+        // Calculate the variance
+        function calculateVariance(data) {
+            const mean = calculateAverage(data);
+            const sumOfSquares = data.reduce((acc, value) => acc + (value - mean) ** 2, 0);
+            return sumOfSquares / (data.length - 1);
+        }
+    </script>
+</body>
+
+</html>

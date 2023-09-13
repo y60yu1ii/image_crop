@@ -1,10 +1,8 @@
-<!DOCTYPE html>
-<html>
 <html>
 
 <head>
     <meta charset="utf-8">
-    <title>影像處理</title>
+    <title>影像處理 v1.2</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-jcrop/0.9.15/css/jquery.Jcrop.css">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
@@ -46,6 +44,8 @@
 <body>
 
     <div>
+        <input type="checkbox" id="ck_jcrop" name="check_jcrop" checked />
+        <label for="check_jcrop">矩形選取</label>
         <input type="checkbox" id="ck_single" name="check_single" />
         <label for="check_single">只取第一點</label>
         <label for="maf">放大倍率</label>
@@ -132,6 +132,9 @@
     </div>
     <hr>
     </br>
+    <hr>
+    <canvas id="canvasPic"></canvas>
+    <canvas id="extractedCanvas"></canvas>
     <script>
         var info = {
             name: "",
@@ -157,6 +160,12 @@
         var isCheckSpeedPoints = false;
         var speedPointXY = [];
         var speedPoints = [];
+
+        const canvasPic = document.getElementById("canvasPic");
+        const ctxPic = canvasPic.getContext('2d');
+        const extractedCanvas = document.getElementById('extractedCanvas');
+        const extractedCtx = extractedCanvas.getContext('2d');
+
 
         function drawVerticalColormap(canvasId, colorPoints) {
             const canvas = document.getElementById(canvasId);
@@ -207,45 +216,54 @@
             context.closePath();
         }
 
-
         function mapping(r, g, b) {
-            var max = Math.max(r, g, b);
             var v = 0;
-            if (max == r) {
-                var max2 = Math.max(g, b);
-                if (max2 == g) {
-                    v = ((r - 127) / 128) * 1 / 10;
-                } else {
-                    v = (g / 256) * 2 / 10 + 1 / 10;
-                }
-            }
-            if (max == g) {
-                var max2 = Math.max(r, b);
-                if (max2 == r) {
-                    v = ((256 - r) / 256) * 2 / 10 + 3 / 10;
-                } else {
-                    v = (b / 256) * 2 / 10 + 5 / 10;
+
+            // When b is the maximum
+            if (b >= r && b >= g) {
+                if (b < 128) {
+                    v = 0.4;
+                } else if (Math.abs(r - g) <= 2) {
+                    v = (b - 127) * 0.0075 + 0.4;
+                } else if (Math.abs(r - g) > 2) {
+                    if (g < r) {
+                        v = (b - 127) * 0.00735 + 0.4;
+                    } else {
+                        v = g * 0.00735 + 1.408;
+                    }
                 }
             }
 
-            if (max == b) {
-                var max2 = Math.max(r, g);
-                if (max2 == g) {
-                    v = ((256 - g) / 256) * 2 / 10 + 7 / 10;
-                } else {
-                    v = ((b - 127) / 128) * 1 / 10 + 9 / 10;
+            // When g is the maximum
+            else if (g >= r && g >= b) {
+                if (Math.abs(b - r) > 2) {
+                    if (b > r) {
+                        v = (255 - b) * 0.00735 + 3.328;
+                    } else {
+                        v = r * 0.00735 + 5.248;
+                    }
+                } else if (Math.abs(b - r) <= 2) {
+                    v = 5.248;
                 }
             }
 
-            if (v > 1) {
-                v = 1;
-            }
-            if (v < 0) {
-                v = 0;
+            // When r is the maximum
+            else if (r >= g && r >= b) {
+                if (r <= 128) {
+                    v = 10;
+                } else if (Math.abs(g - b) > 2) {
+                    if (g > b) {
+                        v = (255 - g) * 0.00735 + 7.168;
+                    } else {
+                        v = (255 - r) * 0.00735 + 9.088;
+                    }
+                } else if (Math.abs(g - b) <= 2) {
+                    v = (255 - r) * 0.0073 + 9.088;
+                }
             }
             return v;
-
         }
+
 
         function dragOverHandler(ev) {
             // console.log("File(s) in drop zone");
@@ -262,22 +280,22 @@
                     // If dropped items aren't files, reject them
                     if (item.kind === "file") {
                         const file = item.getAsFile();
-                        console.log(`… file[${i}].name = ${file.name}`);
+                        // console.log(`… file[${i}].name = ${file.name}`);
                         imgFileChange(file);
                     }
                 });
             } else {
                 // Use DataTransfer interface to access the file(s)
                 [...ev.dataTransfer.files].forEach((file, i) => {
-                    console.log(`… file[${i}].name = ${file.name}`);
+                    // console.log(`… file[${i}].name = ${file.name}`);
                     imgFileChange(file);
                 });
             }
         }
 
         function uploadClick() {
-            document.getElementById("file-upload").click();
-        };
+            $("#file-upload").click();
+        }
 
         function imgFileChange(file) {
             if (file) {
@@ -290,230 +308,218 @@
                     info.lr = matches[3];
                     info.lrVal = matches[4];
                     $('#para').text(`${JSON.stringify(info)}`);
-                    console.log("Chinese Character:", matches[1]);
-                    console.log("Mode:", matches[2]);
-                    console.log("L/R:", matches[3]);
-                    console.log("L/R Value:", matches[4]);
-                    console.log("Unit: cm");
+                    // console.log("Chinese Character:", matches[1]);
+                    // console.log("Mode:", matches[2]);
+                    // console.log("L/R:", matches[3]);
+                    // console.log("L/R Value:", matches[4]);
+                    // console.log("Unit: cm");
                 }
 
                 var reader = new FileReader();
                 reader.onload = function (e) {
                     $('#wrapper_img').empty();
-                    var img = $('<img id="image">');
-                    img.attr('src', e.target.result);
-                    img.appendTo('#wrapper_img');
-                    var img = document.getElementById("image");
-                    img.onload = function () {
+                    var imgId = $('<img id="image">');
+                    imgId.attr('src', e.target.result);
+                    imgId.appendTo('#wrapper_img');
+                    var imgImg = document.getElementById("image");
+                    imgImg.onload = function () {
+                        img = imgImg;
                         var canvas = document.getElementById('canvas');
                         var context = canvas.getContext('2d');
                         canvas.width = img.width;
                         canvas.height = img.height;
                         context.drawImage(img, 0, 0);
 
-                        jcropApi = $.Jcrop('#image', {
-                            onUpdate: function (e) {
-                            },
-                            onChange: function (e) {
-                            },
-                            onSelect: function (c) {
-                                $("#x").val(c.x);
-                                $("#y").val(c.y);
-                                $("#w").val(c.w);
-                                $("#h").val(c.h);
-
-                                clearCanvas("#cbox1");
-                                clearCanvas("#cbox2");
-                                clearCanvas("#cbox3");
-                                clearCanvas("#lcbox1");
-                                clearCanvas("#lcbox2");
-                                clearCanvas("#lcbox3");
-
-                                var checkedSingle = $('#ck_single:checked').val();
-                                var maf = $('#maf').val();
-
-                                $('#text').text(JSON.stringify(c));
-                                var imageData = context.getImageData(c.x, c.y, c.w, c.h);
-                                $('#d').text(`X:${c.x} Y:${c.y} W:${c.w} H:${c.h}`);
-                                var len = 0;
-                                dataArray = imageData.data;
-                                measure.count = dataArray.length;
-
-                                var sumR = 0;
-                                var sumG = 0;
-                                var sumB = 0;
-                                rgbArray = [];
-                                points = [];
-
-                                var loopLen = dataArray.length;
-                                if (checkedSingle) {
-                                    loopLen = 1;
+                        var checkedJcrop = $('#ck_jcrop:checked').val();
+                        if (checkedJcrop) {
+                            jcropApi = $.Jcrop('#image', {
+                                onSelect: function (c) {
+                                    onSelectRun(c.x, c.y, c.w, c.h);
                                 }
-                                for (var i = 0; i < loopLen; i += 4) {
-                                    var rgbObj = {
-                                        r: 0,
-                                        g: 0,
-                                        b: 0,
-                                    };
-                                    rgbObj.r = dataArray[i];
-                                    rgbObj.g = dataArray[i + 1];
-                                    rgbObj.b = dataArray[i + 2];
-                                    rgbArray.push(rgbObj);
-                                    sumR += rgbObj.r;
-                                    sumG += rgbObj.g;
-                                    sumB += rgbObj.b;
-                                    len++;
-                                }
-                                var rgbObj = {
-                                    r: 0,
-                                    g: 0,
-                                    b: 0,
-                                };
-                                var r = (sumR / len);
-                                var g = (sumG / len);
-                                var b = (sumB / len);
-
-                                var v = mapping(r, g, b).toFixed(2);
-                                var p1 = map_range(v, 0, 1, 10, 0.5).toFixed(2);
-
-                                /////////////////
-                                var ar = r;
-                                var ag = g;
-                                var ab = b;
-
-                                var max = Math.max(r, g, b);
-                                var min = Math.min(r, g, b);
-                                var diff = min;
-                                if (max == g) {
-                                    diff = (g - 128);
-                                }
-                                ar = 2 * (ar - diff);
-                                ag = 2 * (ag - diff);
-                                ab = 2 * (ab - diff);
-
-                                if (ar > 255) {
-                                    ar = 255;
-                                }
-                                if (ag > 255) {
-                                    ag = 255;
-                                }
-                                if (ab > 255) {
-                                    ab = 255;
-                                }
-
-                                if (ar < 0) {
-                                    ar = 0;
-                                }
-                                if (ag < 0) {
-                                    ag = 0;
-                                }
-                                if (ab < 0) {
-                                    ab = 0;
-                                }
-
-                                /////////////////
-                                var v2 = mapping(ar, ag, ab).toFixed(2);
-                                drawDot('colormapCanvas', v2);
-                                var p2 = map_range(v2, 0, 1, 10, 0.5).toFixed(2);
-
-                                $('#drop_zone').css('background-color', `rgb(${ar},${ag},${ab})`);
-                                $('#lbbox1').text(`${v} ${p1}m/s rgb(${r.toFixed()},${g.toFixed()},${b.toFixed()}) . `);
-                                $('#lbbox2').text(`${v2} ${p2}m/s rgb(${ar.toFixed()},${ag.toFixed()},${ab.toFixed()}) . `);
-                                $('#lbbox3').text(`rgb(${diff.toFixed()},${diff.toFixed()},${diff.toFixed()}) . `);
-                                //resize will clear canvas
-                                if (checkedSingle) {
-                                    resizeCanvas("#cbox1", 1, 1);
-                                    resizeCanvas("#cbox2", 1, 1);
-                                    resizeCanvas("#cbox3", 1, 1);
-                                    resizeCanvas("#lcbox1", maf * 1, maf * 1);
-                                    resizeCanvas("#lcbox2", maf * 1, maf * 1);
-                                    resizeCanvas("#lcbox3", maf * 1, maf * 1);
-                                } else {
-                                    resizeCanvas("#cbox1", c.w, c.h);
-                                    resizeCanvas("#cbox2", c.w, c.h);
-                                    resizeCanvas("#cbox3", c.w, c.h);
-                                    resizeCanvas("#lcbox1", maf * c.w, maf * c.h);
-                                    resizeCanvas("#lcbox2", maf * c.w, maf * c.h);
-                                    resizeCanvas("#lcbox3", maf * c.w, maf * c.h);
-                                }
-
-                                var loopLen = rgbArray.length;
-                                if (checkedSingle) {
-                                    loopLen = 1;
-                                }
-
-                                for (var i = 0; i < loopLen; i++) {
-                                    var r = rgbArray[i].r;
-                                    var g = rgbArray[i].g;
-                                    var b = rgbArray[i].b;
-                                    var x = i % c.w;
-                                    var y = Math.floor(i / c.w);
-                                    drawPoint(x, y, r, g, b, "#cbox1", 1);
-                                    drawPoint(maf * x, maf * y, r, g, b, "#lcbox1", maf);
-
-                                    var max = Math.max(r, g, b);
-                                    var min = Math.min(r, g, b);
-                                    // R G B 三個數值裡 
-                                    // G 不是最大值時 就R G B都減去最小值
-                                    // G是最大值時，就都減去(G - 256 * A)
-                                    var diff = min;
-                                    if (max == g) {
-                                        diff = (g - 128);
-                                    }
-
-                                    r = 2 * (r - diff);
-                                    g = 2 * (g - diff);
-                                    b = 2 * (b - diff);
-
-                                    if (r > 255) {
-                                        r = 255;
-                                    }
-                                    if (g > 255) {
-                                        g = 255;
-                                    }
-                                    if (b > 255) {
-                                        b = 255;
-                                    }
-
-                                    if (r < 0) {
-                                        r = 0;
-                                    }
-                                    if (g < 0) {
-                                        g = 0;
-                                    }
-                                    if (b < 0) {
-                                        b = 0;
-                                    }
-
-                                    var v = mapping(r, g, b);
-                                    var p = map_range(v, 0, 1, 10, 0.5);
-                                    points.push(p);
-                                    drawPoint(x, y, r, g, b, "#cbox2", 1);
-                                    drawPoint(x, y, diff * 2, diff * 2, diff * 2, "#cbox3", 1);
-
-                                    drawPoint(maf * x, maf * y, r, g, b, "#lcbox2", maf);
-                                    drawPoint(maf * x, maf * y, diff * 2, diff * 2, diff * 2, "#lcbox3", maf);
-                                }
-
-                                measure.count = points.length;
-                                measure.width = c.w;
-                                measure.height = c.h;
-
-                                measure.average = calculateAverage(points);
-                                measure.maximum = calculateMax(points);
-                                measure.minimum = calculateMin(points);
-                                measure.variance = calculateVariance(points);
-                                $('#para2').text(`avg: ${measure.average.toFixed(2)}, max: ${measure.maximum.toFixed(2)}, min: ${measure.minimum.toFixed(2)}, var: ${measure.variance.toFixed(2)}`);
-                                if (isCheckSpeedPoints) {
-                                    speedPoints.push(measure.average.toFixed(2));
-                                }
-                            }
-                        });
+                            });
+                        } else {
+                            jcropApi = null;
+                        }
                     };
                 }
                 reader.readAsDataURL(file);
             }
         };
+
+        // function drawImageToCanvas() {
+        //     var img = $("#image");
+        //     var canvas = $("#canvas")[0];
+        //     let ctx = canvas.getContext("2d");
+        //     canvas.width = img.width;
+        //     canvas.height = img.height;
+        //     context.drawImage(img, 0, 0);
+        // }
+
+        function onSelectRun(x, y, w, h) {
+            $("#x").val(x);
+            $("#y").val(y);
+            $("#w").val(w);
+            $("#h").val(h);
+
+            clearCanvas("#cbox1");
+            clearCanvas("#cbox2");
+            clearCanvas("#cbox3");
+            clearCanvas("#lcbox1");
+            clearCanvas("#lcbox2");
+            clearCanvas("#lcbox3");
+
+            var checkedSingle = $('#ck_single:checked').val();
+            var maf = $('#maf').val();
+
+            var canvas = $("#canvas")[0];
+            let ctx = canvas.getContext("2d");
+            var imageData = ctx.getImageData(x, y, w, h);
+            var len = 0;
+            dataArray = imageData.data;
+            measure.count = dataArray.length;
+
+            var sumR = 0;
+            var sumG = 0;
+            var sumB = 0;
+            rgbArray = [];
+            points = [];
+
+            var loopLen = dataArray.length;
+            if (checkedSingle) {
+                loopLen = 1;
+            }
+            for (var i = 0; i < loopLen; i += 4) {
+                var rgbObj = {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                };
+                rgbObj.r = dataArray[i];
+                rgbObj.g = dataArray[i + 1];
+                rgbObj.b = dataArray[i + 2];
+                rgbArray.push(rgbObj);
+                sumR += rgbObj.r;
+                sumG += rgbObj.g;
+                sumB += rgbObj.b;
+                len++;
+            }
+            var rgbObj = {
+                r: 0,
+                g: 0,
+                b: 0,
+            };
+            var r = (sumR / len);
+            var g = (sumG / len);
+            var b = (sumB / len);
+
+            var p1 = mapping(r, g, b);
+            var v = map_range(p1, 10, 0.4, 0, 1);
+
+            let rgb = adjustRGB(r, g, b);
+
+            var p2 = mapping(rgb.r, rgb.g, rgb.b);
+            var v2 = map_range(p2, 10, 0.4, 0, 1);
+            drawDot('colormapCanvas', v2);
+
+            $('#drop_zone').css('background-color', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
+            $('#lbbox1').text(`${v.toFixed(2)} ${p1.toFixed(2)}m/s rgb(${r.toFixed()},${g.toFixed()},${b.toFixed()})`);
+            $('#lbbox2').text(`${v2.toFixed(2)} ${p2.toFixed(2)}m/s rgb(${rgb.r.toFixed()},${rgb.g.toFixed()},${rgb.b.toFixed()})`);
+            $('#lbbox3').text(`rgb(${rgb.d.toFixed()},${rgb.d.toFixed()},${rgb.d.toFixed()}) . `);
+            //resize will clear canvas
+            if (checkedSingle) {
+                resizeCanvas("#cbox1", 1, 1);
+                resizeCanvas("#cbox2", 1, 1);
+                resizeCanvas("#cbox3", 1, 1);
+                resizeCanvas("#lcbox1", maf * 1, maf * 1);
+                resizeCanvas("#lcbox2", maf * 1, maf * 1);
+                resizeCanvas("#lcbox3", maf * 1, maf * 1);
+            } else {
+                resizeCanvas("#cbox1", w, h);
+                resizeCanvas("#cbox2", w, h);
+                resizeCanvas("#cbox3", w, h);
+                resizeCanvas("#lcbox1", maf * w, maf * h);
+                resizeCanvas("#lcbox2", maf * w, maf * h);
+                resizeCanvas("#lcbox3", maf * w, maf * h);
+            }
+
+            var loopLen = rgbArray.length;
+            if (checkedSingle) {
+                loopLen = 1;
+            }
+
+            for (var i = 0; i < loopLen; i++) {
+                var r = rgbArray[i].r;
+                var g = rgbArray[i].g;
+                var b = rgbArray[i].b;
+                var nx = i % w;
+                var ny = Math.floor(i / w);
+                drawPoint(nx, ny, r, g, b, "#cbox1", 1);
+                drawPoint(maf * nx, maf * ny, r, g, b, "#lcbox1", maf);
+
+                let rgb = adjustRGB(r, g, b);
+                var p = mapping(rgb.r, rgb.g, rgb.b);
+                var v = map_range(p, 10, 0.4, 0, 1);
+                points.push(p);
+                drawPoint(nx, ny, rgb.r, rgb.g, rgb.b, "#cbox2", 1);
+                drawPoint(nx, ny, rgb.d * 2, rgb.d * 2, rgb.d * 2, "#cbox3", 1);
+
+                drawPoint(maf * nx, maf * ny, rgb.r, rgb.g, rgb.b, "#lcbox2", maf);
+                drawPoint(maf * nx, maf * ny, rgb.d * 2, rgb.d * 2, rgb.d * 2, "#lcbox3", maf);
+            }
+
+            measure.count = points.length;
+            measure.width = w;
+            measure.height = h;
+
+            measure.average = calculateAverage(points);
+            measure.maximum = calculateMax(points);
+            measure.minimum = calculateMin(points);
+            measure.variance = calculateVariance(points);
+            $('#para2').text(`avg: ${measure.average.toFixed(2)}, max: ${measure.maximum.toFixed(2)}, min: ${measure.minimum.toFixed(2)}, var: ${measure.variance.toFixed(2)}`);
+            if (isCheckSpeedPoints) {
+                speedPoints.push(measure.average.toFixed(2));
+            }
+        }
+
+        function adjustRGB(r, g, b) {
+            // var max = Math.max(r, g, b);
+            var min = Math.min(r, g, b);
+            // R G B 三個數值裡 
+            // G 不是最大值時 就R G B都減去最小值
+            // G是最大值時，就都減去(G - 256 * A)
+            var d = min;
+            // if (max == g) {
+            //     d = (g - 128);
+            // }
+
+            r = 2 * (r - d);
+            g = 2 * (g - d);
+            b = 2 * (b - d);
+
+            if (r > 255) {
+                r = 255;
+            }
+            if (g > 255) {
+                g = 255;
+            }
+            if (b > 255) {
+                b = 255;
+            }
+
+            if (r < 0) {
+                r = 0;
+            }
+            if (g < 0) {
+                g = 0;
+            }
+            if (b < 0) {
+                b = 0;
+            }
+
+            return {
+                r, g, b, d
+            }
+        }
 
         $("#selection-form").submit(function (event) {
             event.preventDefault(); // Prevent form submission
@@ -524,7 +530,10 @@
             const h = parseInt($("#h").val());
 
             const presetCoords = [x, y, x + w, y + h];
-            jcropApi.setSelect(presetCoords);
+
+            if (jcropApi) {
+                jcropApi.setSelect(presetCoords);
+            }
         });
 
 
@@ -552,7 +561,9 @@
             for (let j = y - e; j <= y + e; j++) {
                 for (let i = x - e; i <= x + e; i++) {
                     const presetCoords = [i, j, i + w, j + h];
-                    jcropApi.setSelect(presetCoords);
+                    if (jcropApi) {
+                        jcropApi.setSelect(presetCoords);
+                    }
                     speedPointXY.push({ x: i, y: j });
                     $('#checktext').text(`查找中... ${i} ${j}`);
                     await new Promise(resolve => setTimeout(resolve, 1));
@@ -573,14 +584,18 @@
 
                 element.click(function () {
                     const presetCoords = [x, y, x + w, y + h];
-                    jcropApi.setSelect(presetCoords);
+                    if (jcropApi) {
+                        jcropApi.setSelect(presetCoords);
+                    }
                 });
 
                 resultDiv.append(element);
             })
             isCheckSpeedPoints = false;
             const presetCoords = [ori.x, ori.y, ori.x + w, ori.y + h];
-            jcropApi.setSelect(presetCoords);
+            if (jcropApi) {
+                jcropApi.setSelect(presetCoords);
+            }
 
         });
 
@@ -667,6 +682,10 @@
             return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
         }
 
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
         function download() {
             const utf8Bom = "\uFEFF"; // UTF-8 BOM character
 
@@ -702,6 +721,7 @@
 
             URL.revokeObjectURL(csvUrl);
         }
+
     </script>
 </body>
 
