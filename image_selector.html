@@ -1,4 +1,4 @@
-<!-- Version: V1.5.6 -->
+<!-- Version: V1.5.7 -->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -29,10 +29,15 @@
 </head>
 
 <body>
-    <h2>請圍成封閉的曲線v1.4</h2>
+    <h2>請圍成封閉的曲線v1.5.8</h2>
     <input type="file" id="imageInput" onclick="confirmImageChange()">
     <div class="text" id="para">參數</div>
     <div class="text" id="para2">參數</div>
+    <form id="selection-form">
+        <label for="polluted">Polluted 最小值</label>
+        <input type="number" id="polluted" name="polluted" value="100"><br>
+        <input type="submit" value="套用選擇">
+    </form>
     <div class="separator"></div>
     <button onclick="extractRGB()">Extract RGB</button>
     <button onclick="undo()">Undo</button>
@@ -93,6 +98,7 @@
         let points2 = [];
         var measure1 = {};
         var measure2 = {};
+        var polluted = 100;
 
         var info = {
             name: "",
@@ -100,6 +106,11 @@
             lr: "",
             lrVal: "",
         };
+
+        $("#selection-form").submit(function (event) {
+            event.preventDefault(); // Prevent form submission
+            polluted = parseInt($("#polluted").val());
+        });
 
         function resetState() {
             img = null;
@@ -302,6 +313,19 @@
             return Math.abs(r - g) <= 30 && Math.abs(r - b) <= 30 && Math.abs(g - b) <= 30;
         }
 
+        function isPolluted(r, g, b) {
+            // 找出 r, g, b 三者中的最小值
+            const minValue = Math.min(r, g, b);
+
+            // 如果最小值大於 100，直接回傳 true
+            if (minValue > polluted) {
+                return true;
+            }
+
+            // 前面的條件都不符合
+            return false;
+        }
+
         function mapping(r, g, b) {
             var v = 0;
 
@@ -335,7 +359,7 @@
 
             // When r is the maximum
             else if (r >= g && r >= b) {
-                if (r <= 128) {
+                if (r <= 130) {
                     v = 10;
                 } else if (Math.abs(g - b) > 2) {
                     if (g > b) {
@@ -393,6 +417,8 @@
         function extractRGB() {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+            console.log(`---> polluted min is ${polluted}`);
+
             for (let y = 0; y < canvas.height; y++) {
                 for (let x = 0; x < canvas.width; x++) {
                     let isInAnyPath = false;
@@ -407,17 +433,20 @@
                     const r = imageData.data[index];
                     const g = imageData.data[index + 1];
                     const b = imageData.data[index + 2];
-                    if (isInAnyPath && !previouslySelectedPixels.has(pixelKey) && !isWhite(r, g, b) && !isNearGrayScale(r, g, b)) {
+                    if (isInAnyPath && !previouslySelectedPixels.has(pixelKey) && !isWhite(r, g, b) && !isNearGrayScale(r, g, b) && !isPolluted(r, g, b)) {
                         previouslySelectedPixels.add(pixelKey);
                         let a = 255;
                         let rgb = adjustRGB(r, g, b);
 
-                        extractedCtx.fillStyle = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + (a / 255) + ")";
-                        extractedCtx.fillRect(x, y, 1, 1);
+                        if (rgb.d != -1) {
+                            extractedCtx.fillStyle = "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + (a / 255) + ")";
+                            extractedCtx.fillRect(x, y, 1, 1);
+                        }
+
                     } else {
                         previouslySelectedPixels.delete(pixelKey);
                         extractedCtx.clearRect(x, y, 1, 1);
-                        // if (isInAnyPath && !isWhite(r, g, b) && !isNearGrayScale(r, g, b)) {
+                        // if (isInAnyPath && !isWhite(r, g, b) && !isNearGrayScale(r, g, b) && !isPolluted(r, g, b)) {
                         // extractedCtx.fillStyle = "white";
                         // extractedCtx.fillRect(x, y, 1, 1);
                         // }
@@ -478,15 +507,17 @@
                 const g = imageData.data[index + 1];
                 const b = imageData.data[index + 2];
                 let rgb = adjustRGB(r, g, b);
-                const p = Number.parseFloat(mapping(rgb.r, rgb.g, rgb.b).toFixed(2));
-                var point = {
-                    x: x,
-                    y: y,
-                    rgb: rgb,
-                    rgbO: { r, g, b },
-                    p: p
-                };
-                points.push(point);
+                if (rgb.d != -1) {
+                    const p = Number.parseFloat(mapping(rgb.r, rgb.g, rgb.b).toFixed(2));
+                    var point = {
+                        x: x,
+                        y: y,
+                        rgb: rgb,
+                        rgbO: { r, g, b },
+                        p: p
+                    };
+                    points.push(point);
+                }
                 // console.log(`${x}, ${y}--> ${p}`);
             }
 
